@@ -189,10 +189,22 @@ __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned int uPeriod)
 #endif
 
 #if defined(_WIN32) && (defined(_MSC_VER) || defined(__TINYC__))
-    #define DIRENT_MALLOC RL_MALLOC
-    #define DIRENT_FREE RL_FREE
+    #ifdef USE_MINIRENT
+        struct dirent {
+            char d_name[MAX_PATH];
+        };
 
-    #include "external/dirent.h"    // Required for: DIR, opendir(), closedir() [Used in LoadDirectoryFiles()]
+        typedef struct DIR DIR;
+
+        DIR *opendir(const char *dirpath);
+        struct dirent *readdir(DIR *dirp);
+        int closedir(DIR *dirp);
+    #else
+        #define DIRENT_MALLOC RL_MALLOC
+        #define DIRENT_FREE RL_FREE
+
+        #include "external/dirent.h"    // Required for: DIR, opendir(), closedir() [Used in LoadDirectoryFiles()]
+    #endif
 #else
     #include <dirent.h>             // Required for: DIR, opendir(), closedir() [Used in LoadDirectoryFiles()]
 #endif
