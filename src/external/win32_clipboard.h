@@ -298,7 +298,7 @@ close:
     CloseClipboard();
 end:
 
-    TRACELOG(severity, msgString);
+    TRACELOG(severity, "%s", msgString);
     return bmpData;
 }
 
