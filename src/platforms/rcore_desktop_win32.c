@@ -538,6 +538,96 @@ static void *WglGetProcAddress(const char *procname)
     return proc;
 }
 
+typedef struct {
+    UINT32 vk;
+    KeyboardKey rl;
+} rl_vk;
+
+static rl_vk KeyMappings[] = {
+    {0, KEY_NULL},
+    {VK_RETURN, KEY_ENTER},
+    {VK_ESCAPE, KEY_ESCAPE},
+    {VK_SPACE, KEY_SPACE},
+    {VK_LEFT, KEY_LEFT},
+    {VK_UP, KEY_UP},
+    {VK_RIGHT, KEY_RIGHT},
+    {VK_DOWN, KEY_DOWN},
+    {'0', KEY_ZERO},
+    {'1', KEY_ONE},
+    {'2', KEY_TWO},
+    {'3', KEY_THREE},
+    {'4', KEY_FOUR},
+    {'5', KEY_FIVE},
+    {'6', KEY_SIX},
+    {'7', KEY_SEVEN},
+    {'8', KEY_EIGHT},
+    {'9', KEY_NINE},
+    {'A', KEY_A},
+    {'B', KEY_B},
+    {'C', KEY_C},
+    {'D', KEY_D},
+    {'E', KEY_E},
+    {'F', KEY_F},
+    {'G', KEY_G},
+    {'H', KEY_H},
+    {'I', KEY_I},
+    {'J', KEY_J},
+    {'K', KEY_K},
+    {'L', KEY_L},
+    {'M', KEY_M},
+    {'N', KEY_N},
+    {'O', KEY_O},
+    {'P', KEY_P},
+    {'Q', KEY_Q},
+    {'R', KEY_R},
+    {'S', KEY_S},
+    {'T', KEY_T},
+    {'U', KEY_U},
+    {'V', KEY_V},
+    {'W', KEY_W},
+    {'X', KEY_X},
+    {'Y', KEY_Y},
+    {'Z', KEY_Z},
+    {VK_MULTIPLY, KEY_KP_MULTIPLY},
+    {VK_ADD, KEY_KP_ADD},
+    // {VK_SEPARATOR, },
+    {VK_SUBTRACT, KEY_KP_SUBTRACT},
+    {VK_DECIMAL, KEY_KP_DECIMAL},
+    {VK_DIVIDE, KEY_KP_DIVIDE},
+    {VK_LWIN, KEY_LEFT_SUPER},
+    {VK_RWIN, KEY_RIGHT_SUPER},
+    {VK_OEM_COMMA, KEY_COMMA},
+    {VK_OEM_PERIOD, KEY_PERIOD},
+    {VK_OEM_1, KEY_SEMICOLON}, // ';:' for US
+    // {VK_OEM_2, },               // '/?' for US
+    {VK_OEM_3, KEY_APOSTROPHE}, // '`~' for US
+    // {VK_OEM_4, },               //  '[{' for US
+    // {VK_OEM_5, },               //  '\|' for US
+    // {VK_OEM_6, },               //  ']}' for US
+    // {VK_OEM_7, }, //  ''"' for US
+    // {VK_OEM_8, },               //
+    {VK_LSHIFT, KEY_LEFT_SHIFT},
+    {VK_LCONTROL, KEY_LEFT_CONTROL},
+    {VK_LMENU, KEY_LEFT_ALT},
+    {VK_RSHIFT, KEY_RIGHT_SHIFT},
+    {VK_RCONTROL, KEY_RIGHT_CONTROL},
+    {VK_RMENU, KEY_RIGHT_ALT},
+};
+
+static KeyboardKey from_vk(UINT32 vk) {
+    for(size_t i = 0; i < ARRAYSIZE(KeyMappings); ++i) {
+        if(KeyMappings[i].vk == vk) return KeyMappings[i].rl;
+    }
+    return KEY_NULL;
+}
+
+static UINT32 from_rl(KeyboardKey rl) {
+    for(size_t i = 0; i < ARRAYSIZE(KeyMappings); ++i) {
+        if(KeyMappings[i].rl == rl) return KeyMappings[i].vk;
+    }
+    return 0;
+}
+
 // Get key from wparam (mapping)
 static KeyboardKey GetKeyFromWparam(WPARAM wparam)
 {
@@ -1500,18 +1590,20 @@ const char *GetKeyName(int key)
 {
     static char name[64];
 
-    int scanCode = MapVirtualKeyA(key, MAPVK_VK_TO_VSC_EX);
+    int scanCode = MapVirtualKeyW(from_rl(key), MAPVK_VK_TO_VSC_EX);
     if (!scanCode)
         return "";
 
-    memset(&name, 0, sizeof(name));
-
-    int n = GetKeyNameTextA(scanCode << 16, name, sizeof(name));
-    if (n <= 0 || !name[0])
+    wchar_t wName[sizeof(name)] = {0};
+    int n = GetKeyNameTextW(scanCode << 16, wName, ARRAYSIZE(wName));
+    if (n <= 0 || !wName[0])
     {
-        TRACELOG(LOG_ERROR, "GetKeyNameTextA failed: %s", Win32ErrorMessage(GetLastError()));
+        DWORD err = GetLastError();
+        if (err)
+            TRACELOG(LOG_ERROR, "GetKeyNameTextW failed: %s", Win32ErrorMessage(err));
         return "";
     }
+    WtoACopy(wName, name, ARRAYSIZE(name));
     return name;
 }
 
@@ -2177,7 +2269,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             }
         } break;
         case WM_CHAR: HandleChar(wparam); break;
+        case WM_SYSKEYDOWN:
         case WM_KEYDOWN: HandleKey(wparam, lparam, 1); break;
+        case WM_SYSKEYUP:
         case WM_KEYUP: HandleKey(wparam, lparam, 0); break;
         case WM_LBUTTONDOWN: HandleMouseButton(MOUSE_BUTTON_LEFT, 1); break;
         case WM_LBUTTONUP  : HandleMouseButton(MOUSE_BUTTON_LEFT, 0); break;
@@ -2261,7 +2355,28 @@ static void HandleKey(WPARAM wparam, LPARAM lparam, char state)
         TRACELOG(LOG_WARNING, "transition: 0x%X", t.transition);
     }
 
-    KeyboardKey key = GetKeyFromWparam(wparam);
+    // KeyboardKey key = GetKeyFromWparam(wparam);
+    KeyboardKey key;
+    WORD keyFlags = HIWORD(lparam);
+    WORD scanCode = LOBYTE(keyFlags);
+
+    if (FLAG_IS_SET(keyFlags, KF_EXTENDED))
+    {
+        TRACELOG(LOG_INFO, "KF_EXTENDED");
+        scanCode = MAKEWORD(scanCode, 0xE0);
+    }
+
+    // if ((wparam == VK_SHIFT) || (wparam == VK_CONTROL) || (wparam == VK_MENU))
+    // {
+        UINT k = MapVirtualKeyW(scanCode, MAPVK_VSC_TO_VK_EX);
+        key = from_vk(k);
+        TRACELOG(LOG_INFO, "VK = 0x%X, scanCode = 0x%X, k = 0x%X, key = 0x%X", LOWORD(wparam), scanCode, k, key);
+    // }
+    // else
+    // {
+    //     key = from_vk(LOWORD(wparam));
+    // }
+
     // BYTE key = lparam >> 16;
 
     if (key != KEY_NULL)
@@ -2277,11 +2392,11 @@ static void HandleKey(WPARAM wparam, LPARAM lparam, char state)
             CORE.Input.Keyboard.keyPressedQueueCount++;
         }
 
-        if ((key == KEY_ESCAPE) && (state == 1))
+        if ((key == CORE.Input.Keyboard.exitKey) && (state == 1))
             CORE.Window.shouldClose = true;
     }
     else
-        TRACELOG(LOG_WARNING, "INPUT: Unknown (or currently unhandled) virtual keycode %d (0x%x)", wparam, wparam);
+        TRACELOG(LOG_WARNING, "INPUT: Unknown (or currently unhandled) virtual keycode %d (0x%X)", wparam, wparam);
 
     // TODO: Add key to the queue as well?
 }
@@ -2305,7 +2420,7 @@ static void HandleChar(WPARAM wparam)
 #else
         assert(IS_HIGH_SURROGATE(highPair));
 #endif
-        c = ((highPair - 0xD800) << 10) + (c - 0xDC00) + 0x10000;
+        c = ((highPair - HIGH_SURROGATE_START) << 10) + (c - LOW_SURROGATE_START) + 0x10000;
         highPair = 0;
         // TraceLog(LOG_INFO, "Final UTF32 (%X)", c);
     }

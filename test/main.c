@@ -5,6 +5,7 @@
 #include <locale.h>
 #include <math.h>
 #include <uchar.h>
+#include <wctype.h>
 
 #include "raylib.h"
 
@@ -104,13 +105,14 @@ int main(int argc, char **argv)
         {
             const char *keyName = GetKeyName(k);
             if (keyName)
-                TraceLog(LOG_INFO, "Key Pressed: %s", keyName);
+                TraceLog(LOG_INFO, "Key Pressed: '%s'", keyName);
         }
 
         int c;
         while ((c = GetCharPressed()) != 0)
         {
-            mbstate_t mb = {};
+            if(c < 0x20) continue;
+            mbstate_t mb = { 0 };
             char c8[MB_LEN_MAX];
             size_t n = c32rtomb(c8, c, &mb);
             if (n == (size_t)-1)
@@ -119,8 +121,8 @@ int main(int argc, char **argv)
                 continue;
             }
             int nn = snprintf(NULL, 0, "%X", c);
-            nn += nn %2;
-            TraceLog(LOG_INFO, "Char Pressed: %.*s (0x%0*X)", n, c8, nn, c);
+            nn += nn % 2;
+            TraceLog(LOG_INFO, "Char Pressed: '%.*s' (0x%0*X)", n, c8, nn, c);
         }
 
         BeginDrawing();
