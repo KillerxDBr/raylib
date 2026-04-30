@@ -195,6 +195,14 @@ static PFNWGLGETEXTENSIONSSTRINGARBPROC wglGetExtensionsStringARB = NULL;
 #define WGL_CONTEXT_ES_PROFILE_BIT_EXT        0x00000004
 #define WGL_CONTEXT_ES2_PROFILE_BIT_EXT        0x00000004
 
+#ifndef MAX_CLIPBOARD_BUFFER_LENGTH
+    #define MAX_CLIPBOARD_BUFFER_LENGTH 1024 // Size of the clipboard buffer used on GetClipboardText()
+#endif
+
+// Constants With Flags for Wide string and ASCII conversions
+#define MBWC_FLAGS (MB_ERR_INVALID_CHARS)
+#define WCMB_FLAGS (WC_ERR_INVALID_CHARS | WC_NO_BEST_FIT_CHARS)
+
 //----------------------------------------------------------------------------------
 // Types and Structures Definition
 //----------------------------------------------------------------------------------
@@ -223,12 +231,14 @@ typedef struct {
 //----------------------------------------------------------------------------------
 // Module Internal Functions Declaration
 //----------------------------------------------------------------------------------
+static const char *Win32ErrorMessage(DWORD errorCode);
+
 // Get ASCII to WCHAR length
 static size_t AToWLen(const char *ascii)
 {
-    int sizeNeeded = MultiByteToWideChar(CP_UTF8, 0, ascii, -1, NULL, 0);
-
-    if (sizeNeeded < 0) TRACELOG(LOG_ERROR, "WIN32: Failed to calculate wide length [ERROR: %u]", GetLastError());
+    int sizeNeeded = MultiByteToWideChar(CP_UTF8, MBWC_FLAGS, ascii, -1, NULL, 0);
+    if (sizeNeeded == 0)
+        TRACELOG(LOG_ERROR, "WIN32: Failed to calculate wide length: %s", Win32ErrorMessage(GetLastError()));
 
     return sizeNeeded;
 }
@@ -236,8 +246,56 @@ static size_t AToWLen(const char *ascii)
 // Copy ASCII to WCHAR string
 static void AToWCopy(const char *ascii, wchar_t *outPtr, size_t outLen)
 {
-    int size = MultiByteToWideChar(CP_UTF8, 0, ascii, -1, outPtr, (int)outLen);
-    if (size != outLen) TRACELOG(LOG_WARNING, "WIN32: Failed to convert %i UTF-8 chars to WCHAR, converted %i chars", outLen, size);
+    int size = MultiByteToWideChar(CP_UTF8, MBWC_FLAGS, ascii, -1, outPtr, (int)outLen);
+    if (size == 0)
+        TRACELOG(LOG_WARNING, "WIN32: Failed to convert UTF-8 string to Wide: %s", Win32ErrorMessage(GetLastError()));
+}
+
+// Get WCHAR to ASCII length
+static size_t WtoALen(const wchar_t *wide)
+{
+    int sizeNeeded = WideCharToMultiByte(CP_UTF8, WCMB_FLAGS, wide, -1, NULL, 0, NULL, NULL);
+    if (sizeNeeded == 0)
+        TRACELOG(LOG_ERROR, "WIN32: Failed to calculate ascii length: %s", Win32ErrorMessage(GetLastError()));
+
+    return sizeNeeded;
+}
+
+// Copy WCHAR to ASCII string
+static void WtoACopy(const wchar_t *wide, char *outPtr, size_t outLen)
+{
+    int size = WideCharToMultiByte(CP_UTF8, WCMB_FLAGS, wide, -1, outPtr, (int)outLen, NULL, NULL);
+    if (size == 0)
+        TRACELOG(LOG_WARNING, "WIN32: Failed to convert Wide String to UTF-8: %s", Win32ErrorMessage(GetLastError()));
+}
+
+// Windows API Error Messages
+static const char *Win32ErrorMessage(DWORD errorCode)
+{
+    static char buffer[4096];
+    WCHAR *wcs = NULL;
+    const DWORD flags = FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |    //
+                        FORMAT_MESSAGE_MAX_WIDTH_MASK | FORMAT_MESSAGE_ALLOCATE_BUFFER; //
+
+    DWORD n = FormatMessageW(flags, NULL, errorCode, 0, (WCHAR *)&wcs, 0, NULL);
+    if (!n || WtoALen(wcs) >= sizeof(buffer))
+    {
+        const char *errMsg = "Invalid Win32 error code: 0x%lX";
+        DWORD newError = GetLastError();
+        if (newError != ERROR_MR_MID_NOT_FOUND)
+        {
+            errMsg = "Could not get Win32 error message: 0x%lX";
+        }
+        snprintf(buffer, sizeof(buffer), errMsg, newError);
+    }
+    else
+    {
+        WtoACopy(wcs, buffer, sizeof(buffer));
+        buffer[strlen(buffer) - 1] = '\0';
+    }
+    if (wcs)
+        LocalFree(wcs);
+    return buffer;
 }
 
 static bool DecoratedFromStyle(DWORD style)
@@ -566,8 +624,8 @@ static KeyboardKey GetKeyFromWparam(WPARAM wparam)
         case 'X': return KEY_X;
         case 'Y': return KEY_Y;
         case 'Z': return KEY_Z;
-        /* case VK_LWIN: return KEY_; */
-        /* case VK_RWIN: return KEY_; */
+        case VK_LWIN: return KEY_LEFT_SUPER;
+        case VK_RWIN: return KEY_RIGHT_SUPER;
         /* case VK_APPS: return KEY_; */
         /* case VK_SLEEP: return KEY_; */
         /* case VK_NUMPAD0: return KEY_; */
@@ -638,9 +696,9 @@ static KeyboardKey GetKeyFromWparam(WPARAM wparam)
         /* case VK_LAUNCH_APP2: return KEY_; */
         /* case VK_OEM_1: return KEY_; */
         /* case VK_OEM_PLUS: return KEY_; */
-        /* case VK_OEM_COMMA: return KEY_; */
+        case VK_OEM_COMMA: return KEY_COMMA;
         /* case VK_OEM_MINUS: return KEY_; */
-        /* case VK_OEM_PERIOD: return KEY_; */
+        case VK_OEM_PERIOD: return KEY_PERIOD;
         /* case VK_OEM_2: return KEY_; */
         /* case VK_OEM_3: return KEY_; */
         /* case VK_OEM_4: return KEY_; */
@@ -710,6 +768,22 @@ static BOOL CALLBACK FindMonitorProc(HMONITOR handle, HDC hdc, LPRECT rect, LPAR
     {
         monitor->matchIndex = monitor->index;
         monitor->rect = *rect;
+    }
+
+    monitor->index += 1;
+
+    // Always return TRUE to continue the loop, otherwise, the caller
+    // can't distinguish between stopping the loop and an error
+    return TRUE;
+}
+
+static BOOL CALLBACK FindMonitorHandleProc(HMONITOR handle, HDC hdc, LPRECT rect, LPARAM lparam)
+{
+    MonitorInfo *monitor = (MonitorInfo *)lparam;
+
+    if (monitor->index == monitor->matchIndex)
+    {
+        monitor->needle = handle;
     }
 
     monitor->index += 1;
@@ -789,9 +863,10 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 
 // Win32: Handle inputs functions
 static void HandleKey(WPARAM wparam, LPARAM lparam, char state);
+static void HandleChar(WPARAM wparam);
 static void HandleMouseButton(int button, char state);
 static void HandleRawInput(LPARAM lparam);
-static void HandleWindowResize(HWND hwnd, int *width, int *height);
+static void HandleWindowResize(HWND hwnd, unsigned int *width, unsigned int *height);
 
 static void UpdateWindowStyle(HWND hwnd, unsigned desiredFlags);
 static unsigned SanitizeFlags(int mode, unsigned flags);
@@ -1098,15 +1173,77 @@ int GetMonitorRefreshRate(int monitor)
 // Get the human-readable, UTF-8 encoded name of the selected monitor
 const char *GetMonitorName(int monitor)
 {
-    TRACELOG(LOG_WARNING, "GetMonitorName not implemented");
-    return 0;
+    // TRACELOG(LOG_WARNING, "GetMonitorName not implemented");
+    DISPLAYCONFIG_TARGET_DEVICE_NAME tdn = {0};
+    static char name[sizeof(tdn.monitorFriendlyDeviceName) / sizeof(tdn.monitorFriendlyDeviceName[0])];
+    memset(name, 0, sizeof(name));
+
+    DISPLAYCONFIG_PATH_INFO *PathArray = NULL;
+    DISPLAYCONFIG_MODE_INFO *ModeArray = NULL;
+    unsigned int numPathArray = 0;
+    unsigned int numModeArray = 0;
+
+    const UINT32 flags = QDC_ONLY_ACTIVE_PATHS;
+    LONG ret = GetDisplayConfigBufferSizes(flags, &numPathArray, &numModeArray);
+    if (ret != 0)
+    {
+        TRACELOG(LOG_ERROR, "%s failed, error=%s", "GetDisplayConfigBufferSizes", Win32ErrorMessage(ret));
+        goto defer;
+    }
+
+    // TRACELOG(LOG_INFO, "numPathArray: %u", numPathArray);
+    // TRACELOG(LOG_INFO, "numModeArray: %u", numModeArray);
+
+    assert(numPathArray > 0);
+    PathArray = RL_MALLOC(sizeof(DISPLAYCONFIG_PATH_INFO) * numPathArray);
+    assert(PathArray);
+
+    assert(numModeArray > 0);
+    ModeArray = RL_MALLOC(sizeof(DISPLAYCONFIG_MODE_INFO) * numModeArray);
+    assert(ModeArray);
+
+    ret = QueryDisplayConfig(flags, &numPathArray, PathArray, &numModeArray, ModeArray, NULL);
+    if (ret != 0)
+    {
+        TRACELOG(LOG_ERROR, "%s failed, error=%s", "QueryDisplayConfig", Win32ErrorMessage(ret));
+        goto defer;
+    }
+
+    assert(monitor >= 0 && monitor < numPathArray);
+
+    tdn.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+    tdn.header.size = sizeof(tdn);
+    tdn.header.adapterId = PathArray[monitor].sourceInfo.adapterId;
+    tdn.header.id = PathArray[monitor].targetInfo.id;
+
+    ret = DisplayConfigGetDeviceInfo(&tdn.header);
+    if (ret != 0)
+    {
+        TRACELOG(LOG_ERROR, "%s failed, error=%s", "DisplayConfigGetDeviceInfo", Win32ErrorMessage(ret));
+        goto defer;
+    }
+
+    WtoACopy(tdn.monitorFriendlyDeviceName, name, sizeof(name));
+
+defer:
+    if (ModeArray)
+        RL_FREE(ModeArray);
+    if (PathArray)
+        RL_FREE(PathArray);
+
+    return name;
 }
 
 // Get window position XY on monitor
 Vector2 GetWindowPosition(void)
 {
-    //TRACELOG(LOG_WARNING, "GetWindowPosition not implemented");
-    return (Vector2){ 0, 0 };
+    WINDOWPLACEMENT wndpl = { 0 };
+    wndpl.length = sizeof(wndpl);
+    if (!GetWindowPlacement(platform.hwnd, &wndpl))
+        TRACELOG(LOG_ERROR, "%s failed, error=%lu", "GetWindowPlacement", GetLastError());
+
+    // TRACELOG(LOG_WARNING, "GetWindowPosition not implemented");
+    return (Vector2){wndpl.rcNormalPosition.left, wndpl.rcNormalPosition.top};
 }
 
 // Get window scale DPI factor for current monitor
@@ -1119,14 +1256,66 @@ Vector2 GetWindowScaleDPI(void)
 // Set clipboard text content
 void SetClipboardText(const char *text)
 {
-    TRACELOG(LOG_WARNING, "SetClipboardText not implemented");
+    // TRACELOG(LOG_WARNING, "SetClipboardText not implemented");
+    size_t textSize = AToWLen(text);
+    if (OpenClipboard(platform.hwnd))
+    {
+        HANDLE mem = GlobalAlloc(GMEM_MOVEABLE, textSize * sizeof(WCHAR));
+        if (mem != NULL)
+        {
+            WCHAR *content = GlobalLock(mem);
+            if (content != NULL)
+            {
+                AToWCopy(text, content, textSize);
+                GlobalUnlock(mem);
+
+                if (SetClipboardData(CF_UNICODETEXT, mem) == NULL)
+                {
+                    GlobalFree(mem);
+                }
+            }
+        }
+        CloseClipboard();
+    }
 }
 
 // Get clipboard text content
 const char *GetClipboardText(void)
 {
-    TRACELOG(LOG_WARNING, "GetClipboardText not implemented");
-    return NULL;
+    // TRACELOG(LOG_WARNING, "GetClipboardText not implemented");
+    static char buffer[MAX_CLIPBOARD_BUFFER_LENGTH];
+    memset(buffer, 0, sizeof(buffer));
+
+    if (IsClipboardFormatAvailable(CF_UNICODETEXT))
+    {
+        if (OpenClipboard(platform.hwnd))
+        {
+            HANDLE mem = GetClipboardData(CF_UNICODETEXT);
+            if (mem != NULL)
+            {
+                const WCHAR *clipboard = GlobalLock(mem);
+                if (clipboard != NULL)
+                {
+                    if(WtoALen(clipboard) > MAX_CLIPBOARD_BUFFER_LENGTH) {
+                        WideCharToMultiByte(CP_UTF8, WCMB_FLAGS, clipboard, MAX_CLIPBOARD_BUFFER_LENGTH - 4, buffer, MAX_CLIPBOARD_BUFFER_LENGTH, NULL, NULL);
+                        char *truncate = buffer + MAX_CLIPBOARD_BUFFER_LENGTH - 4;
+                        sprintf(truncate, "...");
+                    } else {
+                        WtoACopy(clipboard, buffer, MAX_CLIPBOARD_BUFFER_LENGTH);
+                    }
+                    // int clipboardSize = snprintf(buffer, sizeof(buffer), "%s", clipboard);
+                    // if (clipboardSize >= MAX_CLIPBOARD_BUFFER_LENGTH)
+                    // {
+                    //     char *truncate = buffer + MAX_CLIPBOARD_BUFFER_LENGTH - 4;
+                    //     sprintf(truncate, "...");
+                    // }
+                    GlobalUnlock(mem);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+    return buffer;
 }
 
 // Get clipboard image
@@ -1309,8 +1498,21 @@ void SetMouseCursor(int cursor)
 // Get physical key name
 const char *GetKeyName(int key)
 {
-    TRACELOG(LOG_WARNING, "GetKeyName not implemented");
-    return NULL;
+    static char name[64];
+
+    int scanCode = MapVirtualKeyA(key, MAPVK_VK_TO_VSC_EX);
+    if (!scanCode)
+        return "";
+
+    memset(&name, 0, sizeof(name));
+
+    int n = GetKeyNameTextA(scanCode << 16, name, sizeof(name));
+    if (n <= 0 || !name[0])
+    {
+        TRACELOG(LOG_ERROR, "GetKeyNameTextA failed: %s", Win32ErrorMessage(GetLastError()));
+        return "";
+    }
+    return name;
 }
 
 // Register all input events
@@ -1974,6 +2176,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
                 CORE.Input.Touch.position[0] = CORE.Input.Mouse.currentPosition;
             }
         } break;
+        case WM_CHAR: HandleChar(wparam); break;
         case WM_KEYDOWN: HandleKey(wparam, lparam, 1); break;
         case WM_KEYUP: HandleKey(wparam, lparam, 0); break;
         case WM_LBUTTONDOWN: HandleMouseButton(MOUSE_BUTTON_LEFT, 1); break;
@@ -2024,21 +2227,95 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
 // Handle keyboard input event
 static void HandleKey(WPARAM wparam, LPARAM lparam, char state)
 {
-    KeyboardKey key = GetKeyFromWparam(wparam);
 
-    // TODO: Use scancode?
-    //BYTE scancode = lparam >> 16;
-    //TRACELOG(LOG_INFO, "KEY key=%d vk=%lu scan=%u = %u", key, wparam, scancode, state);
+    struct tt
+    {
+        UINT32 repeat : 16;
+        UINT32 scan : 8;
+        UINT32 ex : 1;
+        UINT32 reserved : 4;
+        UINT32 context : 1;
+        UINT32 prev : 1;
+        UINT32 transition : 1;
+    } t;
+
+    static_assert(sizeof(t) == sizeof(UINT32), "Invalid struct size");
+
+    memcpy(&t, &lparam, sizeof(t));
+
+    if (0)
+    {
+        char bin[32];
+        for (size_t i = 0; i < 32; ++i)
+            bin[31 - i] = ((lparam >> i) & 1) + '0';
+
+        TRACELOG(LOG_WARNING, "===========================");
+        TRACELOG(LOG_WARNING, "lparam:     0x%zX", lparam);
+        TRACELOG(LOG_WARNING, "lparam:     %.*s", 32, bin);
+        TRACELOG(LOG_WARNING, "wparam:     0x%zX", wparam);
+        TRACELOG(LOG_WARNING, "repeat:     0x%X", t.repeat);
+        TRACELOG(LOG_WARNING, "scan:       0x%X", t.scan);
+        TRACELOG(LOG_WARNING, "ex:         0x%X", t.ex);
+        TRACELOG(LOG_WARNING, "context:    0x%X", t.context);
+        TRACELOG(LOG_WARNING, "prev:       0x%X", t.prev);
+        TRACELOG(LOG_WARNING, "transition: 0x%X", t.transition);
+    }
+
+    KeyboardKey key = GetKeyFromWparam(wparam);
+    // BYTE key = lparam >> 16;
 
     if (key != KEY_NULL)
     {
         CORE.Input.Keyboard.currentKeyState[key] = state;
+        if (t.repeat)
+            CORE.Input.Keyboard.keyRepeatInFrame[key] = 1;
+        // Check if there is space available in the key queue
+        if ((CORE.Input.Keyboard.keyPressedQueueCount < MAX_KEY_PRESSED_QUEUE))
+        {
+            // Add character to the queue
+            CORE.Input.Keyboard.keyPressedQueue[CORE.Input.Keyboard.keyPressedQueueCount] = key;
+            CORE.Input.Keyboard.keyPressedQueueCount++;
+        }
 
-        if ((key == KEY_ESCAPE) && (state == 1)) CORE.Window.shouldClose = true;
+        if ((key == KEY_ESCAPE) && (state == 1))
+            CORE.Window.shouldClose = true;
     }
-    else TRACELOG(LOG_WARNING, "INPUT: Unknown (or currently unhandled) virtual keycode %d (0x%x)", wparam, wparam);
+    else
+        TRACELOG(LOG_WARNING, "INPUT: Unknown (or currently unhandled) virtual keycode %d (0x%x)", wparam, wparam);
 
     // TODO: Add key to the queue as well?
+}
+
+// Handle WM_CHAR
+static void HandleChar(WPARAM wparam)
+{
+    int c = wparam;
+    static wchar_t highPair = 0;
+    if (IS_HIGH_SURROGATE(c))
+    {
+        highPair = c;
+        // TraceLog(LOG_INFO, "High Surrogate (%X), continuing", c);
+        return;
+    }
+    else if (IS_LOW_SURROGATE(c))
+    {
+        // TraceLog(LOG_INFO, "Low Surrogate (%X), Processing", c);
+#if 0
+        if(!IS_HIGH_SURROGATE(highPair)) return; // error
+#else
+        assert(IS_HIGH_SURROGATE(highPair));
+#endif
+        c = ((highPair - 0xD800) << 10) + (c - 0xDC00) + 0x10000;
+        highPair = 0;
+        // TraceLog(LOG_INFO, "Final UTF32 (%X)", c);
+    }
+    // TraceLog(LOG_INFO, "WM_CHAR: %lc", wparam);
+    if (CORE.Input.Keyboard.charPressedQueueCount < MAX_CHAR_PRESSED_QUEUE)
+    {
+        // Add character to the queue
+        CORE.Input.Keyboard.charPressedQueue[CORE.Input.Keyboard.charPressedQueueCount] = c;
+        CORE.Input.Keyboard.charPressedQueueCount++;
+    }
 }
 
 // Handle mouse button input event
@@ -2074,7 +2351,7 @@ static void HandleRawInput(LPARAM lparam)
 }
 
 // Handle window resizing event
-static void HandleWindowResize(HWND hwnd, int *width, int *height)
+static void HandleWindowResize(HWND hwnd, unsigned int *width, unsigned int *height)
 {
     if (CORE.Window.flags & FLAG_WINDOW_MINIMIZED) return;
 
