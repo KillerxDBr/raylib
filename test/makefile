@@ -30,7 +30,7 @@ RLFLAGS_GL := $(FLAGS) -DPLATFORM_DESKTOP_GLFW -DGRAPHICS_API_OPENGL_33
 
 .PHONY: dir
 
-all: dir w32.exe gl.exe
+all: dir $(BLD)/w32.exe $(BLD)/gl.exe
 
 dir:
 	if not exist $(BLD) mkdir $(BLD)
@@ -39,11 +39,11 @@ $(DEPFILES):
 
 include $(wildcard $(DEPFILES))
 
-w32.exe: $(OBJ) $(RLOBJ_W32)
-	clang -o w32.exe $(RLFLAGS_W32) $(OBJ) $(RLOBJ_W32) $(DEPFLAGS) $(LIBS)
+$(BLD)/w32.exe: $(OBJ) $(RLOBJ_W32)
+	clang -o $(BLD)/w32.exe $(RLFLAGS_W32) $(OBJ) $(RLOBJ_W32) $(DEPFLAGS) $(LIBS)
 
-gl.exe: $(OBJ) $(RLOBJ_GL)
-	clang -o gl.exe $(RLFLAGS_GL) $(OBJ) $(RLOBJ_GL) $(DEPFLAGS) $(LIBS)
+$(BLD)/gl.exe: $(OBJ) $(RLOBJ_GL)
+	clang -o $(BLD)/gl.exe $(RLFLAGS_GL) $(OBJ) $(RLOBJ_GL) $(DEPFLAGS) $(LIBS)
 
 $(BLD)/%.o: %.c
 	clang -c -o $@ $< $(FLAGS) -I$(RLDIR) $(DEPFLAGS) -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP
