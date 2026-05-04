@@ -15,7 +15,7 @@ int main(int argc, char **argv)
 {
     setlocale(LC_CTYPE, "");
 
-    char file_name[32] = {};
+    char file_name[32] = {0};
     {
         char *p;
         char *p1 = strrchr(argv[0], '\\');
@@ -83,18 +83,26 @@ int main(int argc, char **argv)
     while (!WindowShouldClose())
     {
         if (IsKeyPressed(KEY_Q))
+        {
+            TraceLog(LOG_INFO, "SetWindowFocused");
             SetWindowFocused();
+        }
 
         if (IsKeyPressed(KEY_F))
+        {
+            TraceLog(LOG_INFO, "ToggleFullscreen");
             ToggleFullscreen();
+        }
         if (IsKeyPressed(KEY_S))
         {
+            TraceLog(LOG_INFO, "SetWindowMonitor");
             ++mon;
             SetWindowMonitor(mon % monitorCount);
         }
 
         if (IsKeyPressed(KEY_E))
         {
+            TraceLog(LOG_INFO, "SetWindowOpacity");
             static size_t op = 0;
             SetWindowOpacity(op % 2 ? .5 : 1);
             ++op;
@@ -111,11 +119,12 @@ int main(int argc, char **argv)
         int c;
         while ((c = GetCharPressed()) != 0)
         {
-            if(c < 0x20) continue;
-            mbstate_t mb = { 0 };
+            if (c < 0x20)
+                continue;
+            mbstate_t mb = {0};
             char c8[MB_LEN_MAX];
             size_t n = c32rtomb(c8, c, &mb);
-            if (n == (size_t)-1)
+            if ((intptr_t)n < 0)
             {
                 TraceLog(LOG_ERROR, "Could not convert codepoint: %s", strerror(errno));
                 continue;
