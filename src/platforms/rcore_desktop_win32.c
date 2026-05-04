@@ -1290,7 +1290,15 @@ int GetMonitorWidth(int monitor)
 // Get selected monitor height (currently used by monitor)
 int GetMonitorHeight(int monitor)
 {
-    //TRACELOG(LOG_WARNING, "GetMonitorHeight not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount)){
+        MonitorInfo info = GetMonitorFromIndex(monitor);
+        if(info.needle == NULL) {
+            return 0;
+        }
+
+        return info.rect.bottom - info.rect.top;
+    }
     return 0;
 }
 
