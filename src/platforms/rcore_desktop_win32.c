@@ -1259,8 +1259,17 @@ int GetCurrentMonitor(void)
 // Get selected monitor position
 Vector2 GetMonitorPosition(int monitor)
 {
-    TRACELOG(LOG_WARNING, "GetMonitorPosition not implemented");
-    return (Vector2){ 0, 0 };
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount))
+    {
+        MonitorInfo info = GetMonitorFromIndex(monitor);
+        if (info.needle == NULL)
+        {
+            return (Vector2){0, 0};
+        }
+        return (Vector2){info.rect.left, info.rect.top};
+    }
+    return (Vector2){0, 0};
 }
 
 // Get selected monitor width (currently used by monitor)
