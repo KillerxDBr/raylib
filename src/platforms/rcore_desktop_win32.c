@@ -936,6 +936,18 @@ static bool AdoptWindowResize(unsigned flags)
     return true;
 }
 
+static MonitorInfo GetMonitorFromIndex(int monitor) {
+        MonitorInfo info = {0};
+        info.matchIndex = monitor;
+
+        if (!EnumDisplayMonitors(NULL, NULL, FindMonitorHandleProc, (LPARAM)&info))
+        {
+            TRACELOG(LOG_ERROR, "%s failed, error=%s", "EnumDisplayMonitors", Win32ErrorMessage(GetLastError()));
+        }
+
+        return info;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Here's the end of the "pure function section", the rest of the file can access global state
 // ---------------------------------------------------------------------------------------------
