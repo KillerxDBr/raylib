@@ -874,6 +874,7 @@ static BOOL CALLBACK FindMonitorHandleProc(HMONITOR handle, HDC hdc, LPRECT rect
     if (monitor->index == monitor->matchIndex)
     {
         monitor->needle = handle;
+        monitor->rect = *rect;
     }
 
     monitor->index += 1;
