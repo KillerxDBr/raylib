@@ -1144,7 +1144,32 @@ void SetWindowPosition(int x, int y)
 // Set monitor for the current window
 void SetWindowMonitor(int monitor)
 {
-    TRACELOG(LOG_WARNING, "SetWindowMonitor not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount))
+    {
+        RECT rect;
+        GetWindowRect(platform.hwnd, &rect);
+        int width = rect.right - rect.left;
+        int height = rect.bottom - rect.top;
+
+        MonitorInfo info = GetMonitorFromIndex(monitor);
+        if(info.needle == NULL) {
+            return;
+        }
+
+        int mw = info.rect.right - info.rect.left;
+        int mh = info.rect.bottom - info.rect.top;
+
+        int x = mw / 2 - width / 2 + info.rect.left;
+        int y = mh / 2 - height / 2 + info.rect.top;
+
+        if (!SetWindowPos(platform.hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER))
+        {
+            TRACELOG(LOG_ERROR, "%s failed, error=%s", "SetWindowPos", Win32ErrorMessage(GetLastError()));
+        }
+    }
+    else
+        TRACELOG(LOG_WARNING, "WIN32: Failed to find selected monitor");
 }
 
 // Set window minimum dimensions (FLAG_WINDOW_RESIZABLE)
