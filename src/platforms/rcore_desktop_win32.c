@@ -1328,7 +1328,7 @@ const char *GetMonitorName(int monitor)
 {
     // TRACELOG(LOG_WARNING, "GetMonitorName not implemented");
     DISPLAYCONFIG_TARGET_DEVICE_NAME tdn = {0};
-    static char name[sizeof(tdn.monitorFriendlyDeviceName) / sizeof(tdn.monitorFriendlyDeviceName[0])];
+    static char name[ARRAYSIZE(tdn.monitorFriendlyDeviceName)];
     memset(name, 0, sizeof(name));
 
     DISPLAYCONFIG_PATH_INFO *PathArray = NULL;
@@ -1344,9 +1344,7 @@ const char *GetMonitorName(int monitor)
         goto defer;
     }
 
-    // TRACELOG(LOG_INFO, "numPathArray: %u", numPathArray);
-    // TRACELOG(LOG_INFO, "numModeArray: %u", numModeArray);
-
+    // TODO: Change asserts for proper error handling
     assert(numPathArray > 0);
     PathArray = RL_MALLOC(sizeof(DISPLAYCONFIG_PATH_INFO) * numPathArray);
     assert(PathArray);
