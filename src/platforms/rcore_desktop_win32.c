@@ -1275,7 +1275,15 @@ Vector2 GetMonitorPosition(int monitor)
 // Get selected monitor width (currently used by monitor)
 int GetMonitorWidth(int monitor)
 {
-    //TRACELOG(LOG_WARNING, "GetMonitorWidth not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount)){
+        MonitorInfo info = GetMonitorFromIndex(monitor);
+        if(info.needle == NULL) {
+            return 0;
+        }
+
+        return info.rect.right - info.rect.left;
+    }
     return 0;
 }
 
