@@ -1516,7 +1516,28 @@ int GetMonitorPhysicalHeight(int monitor)
 // Get selected monitor refresh rate
 int GetMonitorRefreshRate(int monitor)
 {
-    TRACELOG(LOG_WARNING, "GetMonitorRefreshRate not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount))
+    {
+        DISPLAY_DEVICEW dd = {sizeof(dd)};
+        if (!EnumDisplayDevicesW(NULL, monitor, &dd, EDD_GET_DEVICE_INTERFACE_NAME))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "EnumDisplayDevicesW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        HDC hdc = CreateDCW(dd.DeviceName, NULL, NULL, NULL);
+        if (hdc == NULL)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "CreateDCW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        int hz = GetDeviceCaps(hdc, VREFRESH);
+
+        DeleteDC(hdc);
+        return hz;
+    }
     return 0;
 }
 
@@ -1588,7 +1609,7 @@ Vector2 GetWindowPosition(void)
     WINDOWPLACEMENT wndpl = { 0 };
     wndpl.length = sizeof(wndpl);
     if (!GetWindowPlacement(platform.hwnd, &wndpl))
-        TRACELOG(LOG_ERROR, "%s failed, error=%lu", "GetWindowPlacement", GetLastError());
+        TRACELOG(LOG_ERROR, "%s failed: %s", "GetWindowPlacement", Win32ErrorMessage(GetLastError()));
 
     // TRACELOG(LOG_WARNING, "GetWindowPosition not implemented");
     return (Vector2){wndpl.rcNormalPosition.left, wndpl.rcNormalPosition.top};
