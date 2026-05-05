@@ -1180,20 +1180,26 @@ void SetWindowMonitor(int monitor)
         int height = rect.bottom - rect.top;
 
         MonitorInfo info = GetMonitorFromIndex(monitor);
-        if(info.needle == NULL) {
+        if (info.needle == NULL)
             return;
-        }
 
         int mw = info.rect.right - info.rect.left;
         int mh = info.rect.bottom - info.rect.top;
 
-        int x = mw / 2 - width / 2 + info.rect.left;
-        int y = mh / 2 - height / 2 + info.rect.top;
-
-        if (!SetWindowPos(platform.hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER))
+        BOOL result;
+        if (CORE.Window.flags & FLAG_FULLSCREEN_MODE)
         {
-            TRACELOG(LOG_ERROR, "%s failed, error=%s", "SetWindowPos", Win32ErrorMessage(GetLastError()));
+            result = SetWindowPos(platform.hwnd, HWND_TOP, info.rect.left, info.rect.top, mw, mh, SWP_NOZORDER);
         }
+        else
+        {
+            int x = (mw / 2) - (width / 2) + info.rect.left;
+            int y = (mh / 2) - (height / 2) + info.rect.top;
+            result = SetWindowPos(platform.hwnd, NULL, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        }
+
+        if (!result)
+            TRACELOG(LOG_ERROR, "%s failed, error=%s", "SetWindowPos", Win32ErrorMessage(GetLastError()));
     }
     else
         TRACELOG(LOG_WARNING, "WIN32: Failed to find selected monitor");
