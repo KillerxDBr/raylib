@@ -68,6 +68,8 @@
 #include <windowsx.h>
 #include <shellscalingapi.h>
 #include <versionhelpers.h>
+#include <setupapi.h>
+#include <devguid.h>
 
 #include <malloc.h>          // Required for alloca()
 
