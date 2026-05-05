@@ -323,6 +323,7 @@ static DWORD MakeWindowStyle(unsigned flags)
     style |= (flags & FLAG_WINDOW_HIDDEN)? 0 : WS_VISIBLE;
     style |= (flags & FLAG_WINDOW_RESIZABLE)? STYLE_FLAGS_RESIZABLE : 0;
     style |= (flags & FLAG_WINDOW_UNDECORATED)? STYLE_FLAGS_UNDECORATED_ON : STYLE_FLAGS_UNDECORATED_OFF;
+    style |= (flags & FLAG_FULLSCREEN_MODE)? 0 : WS_OVERLAPPEDWINDOW;
 
     // Minimized takes precedence over maximized
     int mized = MIZED_NONE;
@@ -355,10 +356,10 @@ static void CheckFlags(const char *context, HWND hwnd, DWORD flags, DWORD expect
     LONG actualStyle = (LONG)GetWindowLongPtrW(hwnd, GWL_STYLE);
     if ((actualStyle & styleCheckMask) != (expectedStyle & styleCheckMask))
     {
-        TRACELOG(LOG_ERROR, "WIN32: FLAGS: %s: expected style 0x%x but got 0x%x (diff=0x%x, mask=0x%x, lasterror=%lu)",
+        TRACELOG(LOG_ERROR, "WIN32: FLAGS: %s: expected style 0x%x but got 0x%x (diff=0x%x, mask=0x%x, lasterror=%s)",
             context, expectedStyle & styleCheckMask, actualStyle & styleCheckMask,
             (expectedStyle & styleCheckMask) ^ (actualStyle & styleCheckMask),
-            styleCheckMask, GetLastError());
+            styleCheckMask, Win32ErrorMessage(GetLastError()));
     }
 
     if (styleCheckMask & WS_MINIMIZE)
@@ -996,7 +997,33 @@ bool WindowShouldClose(void)
 // Toggle fullscreen mode
 void ToggleFullscreen(void)
 {
-    TRACELOG(LOG_WARNING, "WIN32: Toggle full screen functionality not implemented");
+    MONITORINFO mi = {sizeof(mi)};
+    static WINDOWPLACEMENT wp = {sizeof(wp)};
+    // https://devblogs.microsoft.com/oldnewthing/20100412-00/?p=14353
+    DWORD dwStyle = GetWindowLongW(platform.hwnd, GWL_STYLE);
+    if (dwStyle & WS_OVERLAPPEDWINDOW)
+    {
+        FLAG_SET(CORE.Window.flags, FLAG_FULLSCREEN_MODE);
+        if (GetWindowPlacement(platform.hwnd, &wp) && GetMonitorInfoW(MonitorFromWindow(platform.hwnd, MONITOR_DEFAULTTONEAREST), &mi))
+        {
+            SetWindowLongW(platform.hwnd, GWL_STYLE, dwStyle & ~WS_OVERLAPPEDWINDOW);
+            SetWindowPos(platform.hwnd, HWND_TOP,
+                         mi.rcMonitor.left, mi.rcMonitor.top,
+                         mi.rcMonitor.right - mi.rcMonitor.left,
+                         mi.rcMonitor.bottom - mi.rcMonitor.top,
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+    }
+    else
+    {
+        FLAG_CLEAR(CORE.Window.flags, FLAG_FULLSCREEN_MODE);
+        SetWindowLongW(platform.hwnd, GWL_STYLE, dwStyle | WS_OVERLAPPEDWINDOW);
+        SetWindowPlacement(platform.hwnd, &wp);
+        SetWindowPos(platform.hwnd, NULL, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                         SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+    // TRACELOG(LOG_WARNING, "WIN32: Toggle full screen functionality not implemented");
 }
 
 // Toggle borderless windowed mode
