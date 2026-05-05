@@ -1338,14 +1338,176 @@ int GetMonitorHeight(int monitor)
 // Get selected monitor physical width in millimetres
 int GetMonitorPhysicalWidth(int monitor)
 {
-    TRACELOG(LOG_WARNING, "GetMonitorPhysicalWidth not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount))
+    {
+#if 1
+        // https://ofekshilon.com/2011/11/13/reading-monitor-physical-dimensions-or-getting-the-edid-the-right-way/
+        int W = 0;
+        HDEVINFO di = SetupDiGetClassDevsExW( //
+            &GUID_DEVCLASS_MONITOR,           //
+            NULL,                             //
+            NULL,                             //
+            DIGCF_PRESENT,                    //
+            NULL,                             //
+            NULL,                             //
+            NULL);                            //
+
+        if (di == NULL)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiGetClassDevsExW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        SP_DEVINFO_DATA did = {sizeof(did)};
+        if (!SetupDiEnumDeviceInfo(di, monitor, &did))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiEnumDeviceInfo", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        HKEY key = SetupDiOpenDevRegKey( //
+            di,                          //
+            &did,                        //
+            DICS_FLAG_GLOBAL,            //
+            0,                           //
+            DIREG_DEV,                   //
+            KEY_READ);                   //
+
+        if (key == INVALID_HANDLE_VALUE)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiOpenDevRegKey", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        DWORD type;
+        BYTE data[256];
+        DWORD datasz = ARRAYSIZE(data);
+
+        if (ERROR_SUCCESS != RegQueryValueExW(key, L"EDID", NULL, &type, data, &datasz))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "RegQueryValueExW", Win32ErrorMessage(GetLastError()));
+            RegCloseKey(key);
+            SetupDiDestroyDeviceInfoList(di);
+            return 0;
+        }
+        W = ((data[68] & 0xF0) << 4) + data[66];
+        // H = ((data[68] & 0x0F) << 8) + data[67];
+
+        RegCloseKey(key);
+        SetupDiDestroyDeviceInfoList(di);
+
+        return W;
+#else // GDI Solution, reported as unreliable
+        DISPLAY_DEVICEW dd = {sizeof(dd)};
+        if (!EnumDisplayDevicesW(NULL, monitor, &dd, EDD_GET_DEVICE_INTERFACE_NAME))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "EnumDisplayDevicesW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        HDC hdc = CreateDCW(dd.DeviceName, NULL, NULL, NULL);
+        if (hdc == NULL)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "CreateDCW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        int w = GetDeviceCaps(hdc, HORZSIZE);
+
+        DeleteDC(hdc);
+        return w;
+#endif
+    }
     return 0;
 }
 
 // Get selected monitor physical height in millimetres
 int GetMonitorPhysicalHeight(int monitor)
 {
-    TRACELOG(LOG_WARNING, "GetMonitorPhysicalHeight not implemented");
+    int monitorCount = GetMonitorCount();
+    if ((monitor >= 0) && (monitor < monitorCount))
+    {
+#if 1
+        int H = 0;
+        HDEVINFO di = SetupDiGetClassDevsExW( //
+            &GUID_DEVCLASS_MONITOR,           //
+            NULL,                             //
+            NULL,                             //
+            DIGCF_PRESENT,                    //
+            NULL,                             //
+            NULL,                             //
+            NULL);                            //
+
+        if (di == NULL)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiGetClassDevsExW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        SP_DEVINFO_DATA did = {sizeof(did)};
+        if (!SetupDiEnumDeviceInfo(di, monitor, &did))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiEnumDeviceInfo", Win32ErrorMessage(GetLastError()));
+            SetupDiDestroyDeviceInfoList(di);
+            return 0;
+        }
+
+        HKEY key = SetupDiOpenDevRegKey( //
+            di,                          //
+            &did,                        //
+            DICS_FLAG_GLOBAL,            //
+            0,                           //
+            DIREG_DEV,                   //
+            KEY_READ);                   //
+
+        if (key == INVALID_HANDLE_VALUE)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "SetupDiOpenDevRegKey", Win32ErrorMessage(GetLastError()));
+            SetupDiDestroyDeviceInfoList(di);
+            return 0;
+        }
+
+        DWORD type;
+        BYTE data[256];
+        DWORD datasz = ARRAYSIZE(data);
+
+        if (ERROR_SUCCESS != RegQueryValueExW(key, L"EDID", NULL, &type, data, &datasz))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "RegQueryValueExW", Win32ErrorMessage(GetLastError()));
+            RegCloseKey(key);
+            SetupDiDestroyDeviceInfoList(di);
+            return 0;
+        }
+
+        // W = ((data[68] & 0xF0) << 4) + data[66];
+        H = ((data[68] & 0x0F) << 8) + data[67];
+
+        RegCloseKey(key);
+        SetupDiDestroyDeviceInfoList(di);
+
+        return H;
+#else // GDI Solution, reported as unreliable
+        DISPLAY_DEVICEW dd = {sizeof(dd)};
+        if (!EnumDisplayDevicesW(NULL, monitor, &dd, EDD_GET_DEVICE_INTERFACE_NAME))
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "EnumDisplayDevicesW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        HDC hdc = CreateDCW(dd.DeviceName, NULL, NULL, NULL);
+        if (hdc == NULL)
+        {
+            TRACELOG(LOG_ERROR, "%s: %s", "CreateDCW", Win32ErrorMessage(GetLastError()));
+            return 0;
+        }
+
+        int h = GetDeviceCaps(hdc, VERTSIZE);
+
+        DeleteDC(hdc);
+        return h;
+#endif
+    }
     return 0;
 }
 
