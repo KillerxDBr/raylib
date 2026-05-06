@@ -24,13 +24,21 @@ DEPFLAGS_GL = -MT $@ -MMD -MP -MF $(BLD)/$*_gl.d
 DEPFILES := $(DEPFILES_W32)
 DEPFILES += $(DEPFLAGS_GL)
 
-FLAGS := -DUNICODE -D_CRT_SECURE_NO_WARNINGS 
+FLAGS := -DUNICODE -D_CRT_SECURE_NO_WARNINGS -g
 RLFLAGS_W32 := $(FLAGS) -DPLATFORM_DESKTOP_WIN32 -DGRAPHICS_API_OPENGL_33
 RLFLAGS_GL := $(FLAGS) -DPLATFORM_DESKTOP_GLFW -DGRAPHICS_API_OPENGL_33
 
 .PHONY: dir
 
-all: dir $(BLD)/w32.exe $(BLD)/gl.exe
+all: dir exes
+
+exes: w32.exe gl.exe
+
+gl.exe: $(BLD)/gl.exe
+	copy /Y "$(BLD)\gl.exe" ".\gl.exe" /B
+
+w32.exe: $(BLD)/w32.exe
+	copy /Y "$(BLD)\w32.exe" ".\w32.exe" /B
 
 dir:
 	if not exist $(BLD) mkdir $(BLD)
@@ -40,7 +48,7 @@ $(DEPFILES):
 include $(wildcard $(DEPFILES))
 
 $(BLD)/w32.exe: $(OBJ) $(RLOBJ_W32)
-	clang -o $(BLD)/w32.exe $(RLFLAGS_W32) $(OBJ) $(RLOBJ_W32) $(DEPFLAGS) $(LIBS)
+	clang -o $(BLD)/w32.exe $(RLFLAGS_W32) $(OBJ) $(RLOBJ_W32) $(DEPFLAGS) $(LIBS) -lsetupapi -ladvapi32
 
 $(BLD)/gl.exe: $(OBJ) $(RLOBJ_GL)
 	clang -o $(BLD)/gl.exe $(RLFLAGS_GL) $(OBJ) $(RLOBJ_GL) $(DEPFLAGS) $(LIBS)
